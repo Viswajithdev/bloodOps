@@ -667,7 +667,7 @@
   </div>
 
   <script>
-    const API_URL = 'https://pov9qy4ue5.execute-api.us-east-1.amazonaws.com/prod';
+    const API_URL = 'YOUR_API_GATEWAY_URL';
     const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 
     // THEME
@@ -832,8 +832,13 @@
       };
       try {
         const res = await fetch(`${API_URL}/donors`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error('Failed to register donor.');
         const data = await res.json();
+        if (res.status === 409) {
+          document.getElementById('donorForm').reset();
+          showConfirmModal('⚠️', 'Already Registered!', `${data.name}, you are already registered as a donor. Your Donor ID is below.`, 'Donor ID', data.DonorID);
+          return;
+        }
+        if (!res.ok) throw new Error('Failed to register donor.');
         // FIX 2 — added data.DonorID as first fallback
         const donorId = data.DonorID ?? data.donor_id ?? data.donorId ?? data.id ?? 'generated';
         document.getElementById('donorForm').reset();

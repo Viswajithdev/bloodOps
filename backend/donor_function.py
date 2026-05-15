@@ -4,14 +4,32 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
+# ============================================================
+# DONOR FUNCTION
+# Handles donor registration with duplicate phone check
+# ============================================================
+
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('Donors')
+
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, Decimal):
             return int(obj) if obj % 1 == 0 else float(obj)
         return super().default(obj)
+
+
+def response(status_code, body):
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps(body, cls=DecimalEncoder)
+    }
+
 
 def lambda_handler(event, context):
     try:
@@ -25,8 +43,26 @@ def lambda_handler(event, context):
     except Exception as e:
         return response(500, {'message': str(e)})
 
+
 def register_donor(event):
     body = json.loads(event['body'])
+
+    # Check if phone number already registered
+    existing = table.scan(
+        FilterExpression='Phone = :p',
+        ExpressionAttributeValues={':p': body['phone']}
+    )
+
+    if existing['Items']:
+        existing_donor = existing['Items'][0]
+        return response(409, {
+            'message': 'This phone number is already registered!',
+            'DonorID': existing_donor['DonorID'],
+            'already_registered': True,
+            'name': existing_donor.get('Name', ''),
+            'blood_type': existing_donor.get('BloodType', '')
+        })
+
     donor_id = str(uuid.uuid4())
     item = {
         'DonorID': donor_id,
@@ -40,11 +76,17 @@ def register_donor(event):
         'CreatedAt': datetime.now().isoformat()
     }
     table.put_item(Item=item)
-    return response(201, {'message': 'Donor registered successfully', 'DonorID': donor_id})
+
+    return response(201, {
+        'message': 'Donor registered successfully',
+        'DonorID': donor_id
+    })
+
 
 def get_donors(event):
     params = event.get('queryStringParameters') or {}
     blood_type = params.get('blood_type')
+
     if blood_type:
         result = table.scan(
             FilterExpression='BloodType = :bt',
@@ -52,14 +94,5 @@ def get_donors(event):
         )
     else:
         result = table.scan()
-    return response(200, result['Items'])
 
-def response(status_code, body):
-    return {
-        'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
-        },
-        'body': json.dumps(body, cls=DecimalEncoder)
-    }
+    return response(200, result['Items'])
